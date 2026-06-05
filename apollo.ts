@@ -1,9 +1,9 @@
 import { ApolloClient, InMemoryCache, HttpLink } from '@apollo/client';
 
 const httpLink = new HttpLink({
-  uri: 'YOUR_HASURA_GRAPHQL_ENDPOINT',
+  uri: 'https://relevant-humpback-83.hasura.app/v1/graphql',
   headers: {
-    'x-hasura-admin-secret': 'YOUR_HASURA_ADMIN_SECRET'
+    'x-hasura-admin-secret': 'nLBpxnW7WK6ToRl0vZn7RVZlUI7mxHHRfEQOE5ZbzX6b5x837FIwscboqACincMa'
   }
 });
 

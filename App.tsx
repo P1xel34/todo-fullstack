@@ -1,24 +1,91 @@
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View, TextInput, TouchableOpacity, FlatList } from 'react-native';
+import { StyleSheet, Text, View, TextInput, TouchableOpacity, FlatList, ActivityIndicator } from 'react-native';
+import { ApolloProvider, useQuery, useMutation, gql } from '@apollo/client';
+import { client } from './apollo';
 import { useState } from 'react';
 
-export default function App() {
-  const [task, setTask] = useState('');
-  const [tasks, setTasks] = useState([
-    { id: '1', title: 'Настроить базу данных Hasura', is_completed: false },
-    { id: '2', title: 'Подключить авторизацию', is_completed: false }
-  ]);
+const USER_ID = '54f667f2-ea84-4be3-b4e7-0da8d888bc9c';
 
-  const addTask = () => {
+const GET_TODOS = gql`
+  query GetTodos($userId: uuid!) {
+    todos(where: { user_id: { _eq: $userId } }) {
+      id
+      title
+      is_completed
+    }
+  }
+`;
+
+const ADD_TODO = gql`
+  mutation AddTodo($title: String!, $userId: uuid!) {
+    insert_todos_one(object: { title: $title, user_id: $userId }) {
+      id
+      title
+      is_completed
+    }
+  }
+`;
+
+const TOGGLE_TODO = gql`
+  mutation ToggleTodo($id: uuid!, $isCompleted: Boolean!) {
+    update_todos_by_pk(pk_columns: { id: $id }, _set: { is_completed: $isCompleted }) {
+      id
+      is_completed
+    }
+  }
+`;
+
+function TodoApp() {
+  const [task, setTask] = useState('');
+
+  const { loading, error, data } = useQuery(GET_TODOS, {
+    variables: { userId: USER_ID },
+  });
+
+  const [addTodo] = useMutation(ADD_TODO, {
+    update(cache, { data: { insert_todos_one } }) {
+      const existingData: any = cache.readQuery({
+        query: GET_TODOS,
+        variables: { userId: USER_ID },
+      });
+      cache.writeQuery({
+        query: GET_TODOS,
+        variables: { userId: USER_ID },
+        data: {
+          todos: [...existingData.todos, insert_todos_one],
+        },
+      });
+    },
+  });
+
+  const [toggleTodo] = useMutation(TOGGLE_TODO);
+
+  const handleAddTask = () => {
     if (task.trim().length > 0) {
-      setTasks([...tasks, { id: Date.now().toString(), title: task, is_completed: false }]);
+      addTodo({ variables: { title: task, userId: USER_ID } });
       setTask('');
     }
   };
 
-  const toggleTask = (id: string) => {
-    setTasks(tasks.map(t => t.id === id ? { ...t, is_completed: !t.is_completed } : t));
+  const handleToggleTask = (id: string, currentStatus: boolean) => {
+    toggleTodo({ variables: { id, isCompleted: !currentStatus } });
   };
+
+  if (loading) {
+    return (
+      <View style={styles.centerContainer}>
+        <ActivityIndicator size="large" color="#3B82F6" />
+      </View>
+    );
+  }
+
+  if (error) {
+    return (
+      <View style={styles.centerContainer}>
+        <Text style={styles.errorText}>Ошибка соединения с базой данных</Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -31,19 +98,19 @@ export default function App() {
           value={task}
           onChangeText={setTask}
         />
-        <TouchableOpacity style={styles.addButton} onPress={addTask}>
+        <TouchableOpacity style={styles.addButton} onPress={handleAddTask}>
           <Text style={styles.addButtonText}>+</Text>
         </TouchableOpacity>
       </View>
 
       <FlatList
-        data={tasks}
-        keyExtractor={item => item.id}
+        data={data.todos}
+        keyExtractor={(item) => item.id}
         style={styles.list}
         renderItem={({ item }) => (
           <TouchableOpacity
             style={[styles.taskCard, item.is_completed && styles.taskCardCompleted]}
-            onPress={() => toggleTask(item.id)}
+            onPress={() => handleToggleTask(item.id, item.is_completed)}
           >
             <Text style={[styles.taskText, item.is_completed && styles.taskTextCompleted]}>
               {item.title}
@@ -56,7 +123,25 @@ export default function App() {
   );
 }
 
+export default function App() {
+  return (
+    <ApolloProvider client={client}>
+      <TodoApp />
+    </ApolloProvider>
+  );
+}
+
 const styles = StyleSheet.create({
+  centerContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F3F4F6',
+  },
+  errorText: {
+    fontSize: 16,
+    color: '#EF4444',
+  },
   container: {
     flex: 1,
     backgroundColor: '#F3F4F6',
