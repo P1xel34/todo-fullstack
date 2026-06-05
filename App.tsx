@@ -1,8 +1,7 @@
-import { StatusBar } from 'expo-status-bar';
+import React, { useState } from 'react';
 import { StyleSheet, Text, View, TextInput, TouchableOpacity, FlatList, ActivityIndicator } from 'react-native';
 import { ApolloProvider, useQuery, useMutation, gql } from '@apollo/client';
 import { client } from './apollo';
-import { useState } from 'react';
 
 const USER_ID = '54f667f2-ea84-4be3-b4e7-0da8d888bc9c';
 
@@ -48,13 +47,15 @@ function TodoApp() {
         query: GET_TODOS,
         variables: { userId: USER_ID },
       });
-      cache.writeQuery({
-        query: GET_TODOS,
-        variables: { userId: USER_ID },
-        data: {
-          todos: [...existingData.todos, insert_todos_one],
-        },
-      });
+      if (existingData) {
+        cache.writeQuery({
+          query: GET_TODOS,
+          variables: { userId: USER_ID },
+          data: {
+            todos: [...existingData.todos, insert_todos_one],
+          },
+        });
+      }
     },
   });
 
@@ -82,7 +83,7 @@ function TodoApp() {
   if (error) {
     return (
       <View style={styles.centerContainer}>
-        <Text style={styles.errorText}>Ошибка соединения с базой данных</Text>
+        <Text style={styles.errorText}>Ошибка соединения с БД</Text>
       </View>
     );
   }
@@ -104,7 +105,7 @@ function TodoApp() {
       </View>
 
       <FlatList
-        data={data.todos}
+        data={data?.todos || []}
         keyExtractor={(item) => item.id}
         style={styles.list}
         renderItem={({ item }) => (
@@ -118,7 +119,6 @@ function TodoApp() {
           </TouchableOpacity>
         )}
       />
-      <StatusBar style="auto" />
     </View>
   );
 }
