@@ -22,7 +22,7 @@ export default function App() {
         body: JSON.stringify({
           query: `
             query GetTodos($userId: uuid!) {
-              todos(where: { user_id: { _eq: $userId } }) {
+              todos(where: { user_id: { _eq: $userId } }, order_by: { title: asc }) {
                 id
                 title
                 is_completed
@@ -33,7 +33,12 @@ export default function App() {
         })
       });
       const json = await res.json();
-      if (json.data) setTodos(json.data.todos);
+      
+      if (json.errors) {
+        alert('Ошибка загрузки задач: ' + json.errors[0].message);
+      } else if (json.data) {
+        setTodos(json.data.todos);
+      }
     } catch (e) {
       setError(true);
     } finally {
@@ -68,20 +73,29 @@ export default function App() {
         })
       });
       const json = await res.json();
+
+      if (json.errors) {
+        alert('БД не приняла задачу. Причина: ' + json.errors[0].message);
+        setTask(currentTask);
+        return;
+      }
+
       if (json.data?.insert_todos_one) {
         setTodos([...todos, json.data.insert_todos_one]);
       }
     } catch (e) {
-      console.error(e);
+      alert('Сетевая ошибка при добавлении задачи');
+      setTask(currentTask);
     }
   };
 
   const handleToggleTask = async (id: string, currentStatus: boolean) => {
     const newStatus = !currentStatus;
+    // Оптимистичное обновление интерфейса
     setTodos(todos.map(t => t.id === id ? { ...t, is_completed: newStatus } : t));
 
     try {
-      await fetch(API_URL, {
+      const res = await fetch(API_URL, {
         method: 'POST',
         headers: HEADERS,
         body: JSON.stringify({
@@ -95,8 +109,44 @@ export default function App() {
           variables: { id, isCompleted: newStatus }
         })
       });
+      const json = await res.json();
+      if (json.errors) {
+        alert('Ошибка изменения статуса: ' + json.errors[0].message);
+        // Возврат статуса при ошибке
+        setTodos(todos.map(t => t.id === id ? { ...t, is_completed: currentStatus } : t));
+      }
     } catch (e) {
       setTodos(todos.map(t => t.id === id ? { ...t, is_completed: currentStatus } : t));
+    }
+  };
+
+  const handleDeleteTask = async (id: string) => {
+    // Оптимистичное удаление из интерфейса
+    const previousTodos = [...todos];
+    setTodos(todos.filter(t => t.id !== id));
+
+    try {
+      const res = await fetch(API_URL, {
+        method: 'POST',
+        headers: HEADERS,
+        body: JSON.stringify({
+          query: `
+            mutation DeleteTodo($id: uuid!) {
+              delete_todos_by_pk(id: $id) {
+                id
+              }
+            }
+          `,
+          variables: { id }
+        })
+      });
+      const json = await res.json();
+      if (json.errors) {
+        alert('Ошибка удаления: ' + json.errors[0].message);
+        setTodos(previousTodos); // Возврат задачи при ошибке
+      }
+    } catch (e) {
+      setTodos(previousTodos);
     }
   };
 
@@ -119,6 +169,7 @@ export default function App() {
   return (
     <View style={styles.container}>
       <Text style={styles.headerTitle}>Менеджер задач</Text>
+      
       <View style={styles.inputContainer}>
         <TextInput
           style={styles.input}
@@ -130,19 +181,26 @@ export default function App() {
           <Text style={styles.addButtonText}>+</Text>
         </TouchableOpacity>
       </View>
+
       <FlatList
         data={todos}
         keyExtractor={(item) => item.id}
         style={styles.list}
         renderItem={({ item }) => (
-          <TouchableOpacity
-            style={[styles.taskCard, item.is_completed && styles.taskCardCompleted]}
-            onPress={() => handleToggleTask(item.id, item.is_completed)}
-          >
-            <Text style={[styles.taskText, item.is_completed && styles.taskTextCompleted]}>
-              {item.title}
-            </Text>
-          </TouchableOpacity>
+          <View style={styles.taskRow}>
+            <TouchableOpacity
+              style={[styles.taskCard, item.is_completed && styles.taskCardCompleted]}
+              onPress={() => handleToggleTask(item.id, item.is_completed)}
+            >
+              <Text style={[styles.taskText, item.is_completed && styles.taskTextCompleted]}>
+                {item.title}
+              </Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity style={styles.deleteButton} onPress={() => handleDeleteTask(item.id)}>
+              <Text style={styles.deleteButtonText}>✕</Text>
+            </TouchableOpacity>
+          </View>
         )}
       />
     </View>
@@ -159,8 +217,11 @@ const styles = StyleSheet.create({
   addButton: { backgroundColor: '#3B82F6', borderRadius: 12, width: 50, justifyContent: 'center', alignItems: 'center', marginLeft: 12, shadowColor: '#3B82F6', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 4, elevation: 4 },
   addButtonText: { color: '#FFFFFF', fontSize: 24, fontWeight: 'bold' },
   list: { flex: 1 },
-  taskCard: { backgroundColor: '#FFFFFF', borderRadius: 12, padding: 16, marginBottom: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2, elevation: 1 },
+  taskRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
+  taskCard: { flex: 1, backgroundColor: '#FFFFFF', borderRadius: 12, padding: 16, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2, elevation: 1 },
   taskCardCompleted: { backgroundColor: '#E5E7EB' },
   taskText: { fontSize: 16, color: '#374151' },
   taskTextCompleted: { color: '#9CA3AF', textDecorationLine: 'line-through' },
+  deleteButton: { backgroundColor: '#EF4444', width: 40, height: 40, borderRadius: 8, justifyContent: 'center', alignItems: 'center', marginLeft: 10 },
+  deleteButtonText: { color: '#FFFFFF', fontSize: 18, fontWeight: 'bold' }
 });
